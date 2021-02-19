@@ -146,32 +146,27 @@ module GitHubRoutes
   extend self
   include Retour::HTTPRouter
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/{_kind:blob|tree|raw|blame|commits}/{branch}/.github/workflows/{workflow:[^/]+\\.ya?ml}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/#{_kind /blob|tree|raw|blame|commits/}/#{branch}/.github/workflows/#{workflow /[^\/]+\.ya?ml/}")]
   def workflow_file(repo_owner, repo_name, _kind, branch, workflow, direct : Bool)
-    if branch =~ /^[0-9a-fA-F]{32,}$/
-      raise Retour::NotFound.new(
-        "Make sure you're on a branch (such as 'master'), not a commit (which '#{branch}' seems to be)."
-      )
-    end
     NightlyLink.gen_dash_by_branch(repo_owner: repo_owner, repo_name: repo_name, workflow: workflow.rchop(".yml"), branch: branch)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/runs/{run_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/runs/#{run_id /[0-9]+/}")]
   def run(repo_owner, repo_name, run_id, direct : Bool)
     NightlyLink.gen_dash_by_run(repo_owner: repo_owner, repo_name: repo_name, run_id: run_id)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/runs/{job_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/runs/#{job_id /[0-9]+/}")]
   def job(repo_owner, repo_name, job_id, direct : Bool)
     NightlyLink.gen_by_job(repo_owner: repo_owner, repo_name: repo_name, job_id: job_id)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/suites/{check_suite_id:[0-9]+}/artifacts/{artifact_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/suites/#{check_suite_id /[0-9]+/}/artifacts/#{artifact_id /[0-9]+/}")]
   def artifact_download(repo_owner, repo_name, check_suite_id, artifact_id, direct : Bool)
     NightlyLink.gen_by_artifact(repo_owner: repo_owner, repo_name: repo_name, artifact_id: artifact_id, zip: (".zip" if direct))
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/commit/{commit:[0-9a-fA-F]{40}}/checks/{job_id:[0-9]+}/logs")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/commit/#{commit /[0-9a-fA-F]{40}/}/checks/#{job_id /[0-9]+/}/logs")]
   def logs_download(repo_owner, repo_name, commit, job_id, direct : Bool)
     NightlyLink.gen_by_job(repo_owner: repo_owner, repo_name: repo_name, job_id: job_id, txt: (".txt" if direct))
   end
@@ -217,12 +212,12 @@ class NightlyLink
 
     messages = [] of String
     if url
-      begin
-        gh_path = url.lchop("https://github.com").partition("?")[0].partition("#")[0]
-        new_path = GitHubRoutes.call("GET", gh_path, direct: false)
+      gh_path = url.lchop("https://github.com").partition("?")[0].partition("#")[0]
+      case (new_path = GitHubRoutes.call("GET", gh_path, direct: false))
+      when Retour::NotFound
+        messages << "Did not detect a link to a GitHub workflow file, actions run, or artifact." << gh_path
+      else
         raise HTTPException.redirect(new_path)
-      rescue e : Retour::NotFound
-        messages << "Did not detect a link to a GitHub workflow file, actions run, or artifact." << e.to_s
       end
     end
 
@@ -299,7 +294,7 @@ class NightlyLink
     raise HTTPException.redirect("/")
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/workflows/{workflow}/{branch}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/workflows/#{workflow}/#{branch}")]
   def dash_by_branch(ctx, repo_owner : String, repo_name : String, workflow : String, branch : String)
     h = ctx.request.query_params["h"]?
     token, h = RepoInstallation.verified_token(@db, repo_owner, repo_name, h: h)
@@ -348,7 +343,7 @@ class NightlyLink
     ECR.embed("templates/artifact_list.html", ctx.response)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/runs/{run_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/runs/#{run_id /[0-9]+/}")]
   def dash_by_run(ctx, repo_owner : String, repo_name : String, run_id : Int64 | String)
     run_id = run_id.to_i64 rescue raise HTTPException.new(:NotFound)
     h = ctx.request.query_params["h"]? if ctx
@@ -434,8 +429,8 @@ class NightlyLink
     end
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/workflows/{workflow}/{branch}/{artifact}{zip:\\.zip}")]
-  @[Retour::Get("/{repo_owner}/{repo_name}/workflows/{workflow}/{branch}/{artifact}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/workflows/#{workflow}/#{branch}/#{artifact}#{zip /\.zip/}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/workflows/#{workflow}/#{branch}/#{artifact}")]
   def by_branch(
     ctx, repo_owner : String, repo_name : String, workflow : String, branch : String, artifact : String,
     h : String? = nil, zip : String? = nil
@@ -467,8 +462,8 @@ class NightlyLink
     ECR.embed("templates/artifact.html", ctx.response)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/runs/{run_id:[0-9]+}/{artifact}{zip:\\.zip}")]
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/runs/{run_id:[0-9]+}/{artifact}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/runs/#{run_id /[0-9]+/}/#{artifact}#{zip /\.zip/}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/runs/#{run_id /[0-9]+/}/#{artifact}")]
   def by_run(
     ctx, repo_owner : String, repo_name : String, run_id : Int64 | String, artifact : String, check_suite_id : Int64? | String = nil,
     h : String? = nil, zip : String? = nil
@@ -513,8 +508,8 @@ class NightlyLink
     ECR.embed("templates/artifact.html", ctx.response)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/artifacts/{artifact_id:[0-9]+}{zip:\\.zip}")]
-  @[Retour::Get("/{repo_owner}/{repo_name}/actions/artifacts/{artifact_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/artifacts/#{artifact_id /[0-9]+/}#{zip /\.zip/}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/actions/artifacts/#{artifact_id /[0-9]+/}")]
   def by_artifact(
     ctx, repo_owner : String, repo_name : String, artifact_id : String | Int64, check_suite_id : String | Int64? = nil,
     h : String? = nil, zip : String? = nil
@@ -569,8 +564,8 @@ class NightlyLink
     ECR.embed("templates/artifact.html", ctx.response)
   end
 
-  @[Retour::Get("/{repo_owner}/{repo_name}/runs/{job_id:[0-9]+}{txt:\\.txt}")]
-  @[Retour::Get("/{repo_owner}/{repo_name}/runs/{job_id:[0-9]+}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/runs/#{job_id /[0-9]+/}#{txt /\.txt/}")]
+  @[Retour::Get("/#{repo_owner}/#{repo_name}/runs/#{job_id /[0-9]+/}")]
   def by_job(
     ctx, repo_owner : String, repo_name : String, job_id : String | Int64,
     h : String? = nil, txt : String? = nil
@@ -632,15 +627,16 @@ class NightlyLink
   {% end %}
 
   def serve_request(ctx, reraise = false)
-    call(ctx, ctx)
-  rescue exception
-    if exception.is_a?(Retour::NotFound)
-      if (new_path = GitHubRoutes.call(ctx, direct: true) rescue nil)
-        exception = HTTPException.redirect(new_path)
+    if call(ctx, ctx).is_a?(Retour::NotFound)
+      case (new_path = GitHubRoutes.call(ctx, direct: true))
+      when Retour::NotFound
+        raise HTTPException.new(:NotFound, ctx.request.path)
       else
-        exception = HTTPException.new(:NotFound, exception.to_s)
+        raise HTTPException.redirect(new_path)
       end
-    elsif !exception.is_a?(HTTPException)
+    end
+  rescue exception
+    if !exception.is_a?(HTTPException)
       raise exception if reraise
       Log.error(exception: exception) { }
       exception = HTTPException.new(:InternalServerError)
